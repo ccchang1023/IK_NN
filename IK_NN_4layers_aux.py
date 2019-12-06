@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
-import argparse, os, utils
+import argparse, os
 from gazebo import *
 from euler_convert import euler2quat,quat2euler
 device = "cuda"
@@ -10,17 +10,31 @@ class IK_NN(torch.nn.Module):
 	def __init__(self, n_feature, n_neuron, n_output):
 		super(IK_NN,self).__init__()
 		self.l1 = torch.nn.Linear(n_feature,n_neuron)
+		self.b1 = torch.nn.BatchNorm1d(n_neuron)
+
 		self.l2 = torch.nn.Linear(n_neuron,n_neuron)
+		self.b2 = torch.nn.BatchNorm1d(n_neuron)
+		self.d1 = torch.nn.Dropout(0.2)
+
 		self.l3 = torch.nn.Linear(n_neuron,n_neuron)
+		self.b3 = torch.nn.BatchNorm1d(n_neuron)
+
 		self.l4 = torch.nn.Linear(n_neuron,n_neuron)
+		self.b4 = torch.nn.BatchNorm1d(n_neuron)
+		self.d2 = torch.nn.Dropout(0.2)
+
 		self.out = torch.nn.Linear(n_neuron,n_output)
     
 	def forward(self,x):
-		x = F.tanh(self.l1(x))
-		x = F.tanh(self.l2(x))
-		x = F.tanh(self.l3(x))
-		x = F.tanh(self.l4(x))
+		x = self.b1(torch.tanh(self.l1(x)))
+		x = self.b2(torch.tanh(self.l2(x)))
+		x = self.d1(x)
+
+		x = self.b3(torch.tanh(self.l3(x)))
+		x = self.b4(torch.tanh(self.l4(x)))
+		x = self.d2(x)
 		x = self.out(x)
+
 		return x
 
 
@@ -34,7 +48,6 @@ def load_model():
 		model = model.cuda()
 		checkpoint = torch.load('{0}/{1}'.format(model_save_path, resume_model),map_location=device)
 		model.load_state_dict(checkpoint)
-
 	else:
 		###Load on CPU      
 		device = torch.device('cpu')
@@ -94,46 +107,46 @@ def decay_learning_rate(optimizer, lr):
 		
 
 if __name__ == "__main__":
-	# model = IK_NN(n_feature=10, n_neuron=300, n_output=6)
-	model = load_model()
+	model = IK_NN(n_feature=10, n_neuron=300, n_output=6)
+	# model = load_model()
 	model.cuda()
 	# # model.cuda().double()
 	# # print(model)
 	criterion = torch.nn.MSELoss()
-	optimizer = torch.optim.Adam(model.parameters(), lr=2e-5)
+	optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+	lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, verbose=True, patience=20,factor=0.1)
 	env = GAZEBO("18006")
 	print("after create gazebo")
 	batch_size = 256
 	epochs = 10000000
 	min_loss = 20000000
+	loss_avg = 0
+	val_frequency = 10
 
-	for i in range(epochs):
+	for i in range(1,epochs+1):
 		# print(i)
 		x,target = get_batch_tensor(batch_size)
 		y = model(x)
 		loss = criterion(y,target)
-		if i%50==0:
-			print("loss:", loss.item())
+		loss_avg += loss.item()
+		
+		if i%val_frequency==0:
+			loss_avg /= val_frequency
+			print("Epoch:{},loss:{}".format(i,loss_avg))
+			lr_scheduler.step(loss_avg)
+			if loss_avg < min_loss:
+				if i>5000:
+					min_loss = loss_avg
+					# print("============model saved============")
+					print("best loss:", loss_avg)
+					# torch.save(model.state_dict(),"./saved_models/aux_model/IK_model_4layers"+str(loss.item()))							
+			loss_avg = 0
 
-		if loss < min_loss:
-			if i>5000:
-				min_loss = loss
-				print("============model saved============")
-				print("best loss:", loss.item())
-				torch.save(model.state_dict(),"./saved_models/aux_model/IK_model_4layers"+str(loss.item()))				
-
-		if i!=0 and i % 20000 == 0:
-			lr = get_learning_rate(optimizer)
-			decay_learning_rate(optimizer,lr)
+		# if i!=0 and i % 20000 == 0:
+		# 	lr = get_learning_rate(optimizer)
+		# 	decay_learning_rate(optimizer,lr)
 
 		optimizer.zero_grad()
 		loss.backward()
 		optimizer.step()
-
-		# Perform action
-		# next_state, reward, done, _ = env.step(action)
-
-		# Train agent after collecting sufficient data
-		# if t >= args.start_timesteps:
-		# 	policy.train(replay_buffer, args.batch_size)
 

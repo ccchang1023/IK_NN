@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
-import argparse, os, utils
+import argparse, os
 from gazebo import *
 from euler_convert import euler2quat,quat2euler
 device = "cuda"
@@ -66,6 +66,10 @@ def get_batch_tensor(batch_num):
 		tcp_pq = pq_dict_to_list(env.interface.GAZEBO_GetLinkPQByName("vs060", "J6"))
 		q = [tcp_pq[3], tcp_pq[4],tcp_pq[5],tcp_pq[6]]
 		euler = quat2euler(q) #W,X,Y,Z
+
+		print(euler)
+		print(np.max(euler),np.min(euler))
+		
 		tcp_euler = [tcp_pq[0]/1.8,tcp_pq[1]/1.8,tcp_pq[2]/1.8,
 		                euler[0],euler[1],euler[2]]
 		x.append(tcp_euler)
