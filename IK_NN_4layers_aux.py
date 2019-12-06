@@ -113,8 +113,8 @@ if __name__ == "__main__":
 	# # model.cuda().double()
 	# # print(model)
 	criterion = torch.nn.MSELoss()
-	optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-	lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, verbose=True, patience=20,factor=0.1)
+	optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
+	lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, verbose=True, patience=15,factor=0.1)
 	env = GAZEBO("18006")
 	print("after create gazebo")
 	batch_size = 256
